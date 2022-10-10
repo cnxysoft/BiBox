@@ -1,0 +1,94 @@
+import console;
+import console.progress;
+import inet.http;
+
+//基础设定
+console.setTitle( "B站昵称获取工具" );
+_APIURL := "https://api.bilibili.com/x/space/acc/info?mid=";
+_TRYINTERVAL := 3000;
+var bar = console.progress();
+bar.doneText = "已完成！"
+
+//func定义
+UpdName = function( path ){
+	if path == "" { console.log( "未发现ID文件，程序结束。" ); console.pause() return -1; }
+	var input = io.splitpath( path );
+	if input.ext == ".txt" {
+		var file, err = io.open( path, "r+" );
+		//批量读入UID
+		if file {
+			console.log( "成功读入TXT文件。" );
+			var aUID = string.split( file.read(-1), '\r\n' );
+			var Res = "";
+			table.removeByValue( aUID, "", true );
+			console.log( "成功读入UID：" ++ #aUID ++ "个" ++ '\r\n准备开始处理……' );
+			//console.dump( aUID );
+			var http = inet.http();
+			//批量昵称获取
+			for( i = 1; #aUID; 1 ){
+				sleep( _TRYINTERVAL );
+				var html, err, errCode = http.get( _APIURL + aUID[i], {
+					"Accept-Language" : "zh-CN,zh";
+					"User-Agent" : "Mozilla/5.0"
+				});
+				if( html ){
+					//console.dump( html );
+					//将JSON转为TABLE以便提取数据
+					var aText, sName = web.json.parse( html ), "";
+					if aText.message == "0" {
+						sName = aText.data.name
+					} else {
+						sName = aText.message
+					}
+					Res += aUID[i] + '\t' + sName + '\r\n'
+				}
+				else {
+    				if( http.statusCode ){
+        				//服务端返回错误信息
+        				console.log( http.lastResponse(), "HTTP错误代码:" ++ http.statusCode )
+    				}
+    				else{
+        				//本地内部错误
+        				console.log( err, errCode )
+    				}
+				}
+				var per = math.round( i / #aUID * 100 );
+				bar.setProgress( per, per ++ "% 处理中 ......" )
+			}
+			file.close();
+			http.close();
+			file, err = io.open( "~/查询结果.txt", "w+" );
+    		file.write( Res );
+    		file.close();
+    		console.log( '数据已处理完成，请查看"查询结果.txt"' )
+		} else {
+			console.log( "无法打开指定的TXT文件，错误：", err )
+		}
+	} else {
+		console.log( "请拖入或使用命令行载入ID列表文件，每行一个UID(*.txt)。" )
+	}
+	console.pause();
+	io.close()
+}
+
+
+//载入指定文件（调试用）
+//_ARGV.in := "C:\GSoft\aardio\project\B站昵称获取\dist\ID列表.txt"
+
+//载入命令行："/in xxx.txt" "-in xxx.txt" "--in xxx.txt" 或 "/in=xxx.txt"
+if( _ARGV.in ){
+	//console.dump( _ARGV.in, _ARGV[#_ARGV] ) //_ARGV 既包含命名参数组成的键值对，也包含按参数顺序组成的数组
+	UpdName( _ARGV.in )
+	/*
+	生成 EXE 以后，按 Ctrl + L 切换到地址栏，输入 cmd 回车 —— 在发布目录打开 cmd.exe，
+	然后输入 exe 文件名（按 tab 键可自动完成文件名）+ 参数后回车执行，例如 "?.exe /opt test c:\xxx.text"。
+	
+	除了传参数，也可以用 string.getenv() 获取父进程设置的环境变量，
+	或者在父进程创建管道(参考标准库 process.popen )读写标准输入输出，子进程用 io.stdin.read() 读标准输入, io.stdout.write() 写标准输出。
+	如果父进程、子进程都是 aardio 编写的，也可以用 process.command 交互更方便。
+	*/
+	
+} else {
+	var sPath = console.getText( "请拖入UID列表文件(*.txt)：" );
+	UpdName( sPath )
+}
