@@ -1,17 +1,43 @@
 import console;
-import console.progress;
 import inet.http;
 
-//基础设定
-console.setTitle( "B站昵称获取工具" );
+/*基础设定{{*/
+console.setTitle( "B站工具集" );
 _APIURL := "https://api.bilibili.com/x/space/acc/info?mid=";
-_TRYINTERVAL := 3000;
-var bar = console.progress();
-bar.doneText = "已完成！"
+_PLAPI := "https://api.bilibili.com/x/player/pagelist?bvid=";
+_CCAPI := "https://api.bilibili.com/x/player/v2?cid=[cid]&bvid=[bvid]";
+_DMAPI := "https://comment.bilibili.com/[cid].xml";
+_TRYINTERVAL := 1000;
+/*}}*/
 
-//func定义
+/*拉取数据{{*/
+GetData = function( url ){
+	var http = inet.http();
+	var html, err, errCode = http.get( url, {
+		"Accept-Language" : "zh-CN,zh";
+		"User-Agent" : "Mozilla/5.0"
+	});
+	if html {
+		http.close();
+		return html
+	} else {
+		if( example.statusCode ){
+			//服务端返回错误信息
+			console.log( example.lastResponse(), "HTTP错误代码:" ++ example.statusCode )
+		} else {
+			//本地内部错误
+			console.log( err, errCode )
+		}
+		http.close();
+		return -1
+	}
+}
+/*}}*/
+
+/*更新昵称FUNC定义{{*/
 UpdName = function( path ){
 	if path == "" { console.log( "未发现ID文件，程序结束。" ); console.pause() return -1; }
+	path = string.replace( path, '@"', '', 2 ); 
 	var input = io.splitpath( path );
 	if input.ext == ".txt" {
 		var file, err = io.open( path, "r+" );
@@ -22,17 +48,12 @@ UpdName = function( path ){
 			var Res = "";
 			table.removeByValue( aUID, "", true );
 			console.log( "成功读入UID：" ++ #aUID ++ "个" ++ '\r\n准备开始处理……' );
-			//console.dump( aUID );
-			var http = inet.http();
+			console.showLoading("处理中……");
 			//批量昵称获取
 			for( i = 1; #aUID; 1 ){
 				sleep( _TRYINTERVAL );
-				var html, err, errCode = http.get( _APIURL + aUID[i], {
-					"Accept-Language" : "zh-CN,zh";
-					"User-Agent" : "Mozilla/5.0"
-				});
-				if( html ){
-					//console.dump( html );
+				var html = GetData( _APIURL + aUID[i] );
+				if html {
 					//将JSON转为TABLE以便提取数据
 					var aText, sName = web.json.parse( html ), "";
 					if aText.message == "0" {
@@ -42,53 +63,111 @@ UpdName = function( path ){
 					}
 					Res += aUID[i] + '\t' + sName + '\r\n'
 				}
-				else {
-    				if( http.statusCode ){
-        				//服务端返回错误信息
-        				console.log( http.lastResponse(), "HTTP错误代码:" ++ http.statusCode )
-    				}
-    				else{
-        				//本地内部错误
-        				console.log( err, errCode )
-    				}
-				}
-				var per = math.round( i / #aUID * 100 );
-				bar.setProgress( per, per ++ "% 处理中 ......" )
 			}
 			file.close();
-			http.close();
 			file, err = io.open( "~/查询结果.txt", "w+" );
-    		file.write( Res );
-    		file.close();
-    		console.log( '数据已处理完成，请查看"查询结果.txt"' )
+			if file {
+    			file.write( Res );
+    			file.close();
+    			console.log( '数据已处理完成，请查看"查询结果.txt"' )
+			} else {
+				console.log( '无法创建查询结果，错误：' ++ err )
+			}
+
+
 		} else {
 			console.log( "无法打开指定的TXT文件，错误：", err )
 		}
 	} else {
 		console.log( "请拖入或使用命令行载入ID列表文件，每行一个UID(*.txt)。" )
 	}
-	console.pause();
-	io.close()
 }
+/*}}*/
 
+/*路灯FUNC定义{{*/
+SLight = function( bvid, part ){
+	console.showLoading("处理中……");
+	var cid, cc_url, dm_url, sCCUrl, sCCSub;
+	var html = GetData( _PLAPI + bvid );
+	if html {
+		var aText = web.json.parse( html );	
+		if aText.message == 0 {
+			cid = aText.data[part].cid;
+			sCCUrl = string.replace( _CCAPI, '@[cid]', cid, 1 );
+			sCCUrl = string.replace( sCCUrl, '@[bvid]', bvid, 1 );
+			html = GetData( sCCUrl );
+			if html {
+				aText = web.json.parse( html );
+				if aText.message == 0 {
+					sCCUrl = "https:" ++ aText.data.subtitle.subtitles[1].subtitle_url;
+					html = GetData( sCCUrl );
+					if html {
+						aText = web.json.parse( html );
+						sCCSub = aText.body;
+						var file, err = io.open( "~/关键词.txt", "r+" );
+						if file {
+							var sRes = "";
+							var aKey = string.split( file.read(-1), '\r\n' );
+							table.removeByValue( aKey, "", true );
+							for( i=1; #sCCSub; 1 ){
+								for( ii=1; #aKey; 1 ){
+									var tSta = string.find( sCCSub[i].content, "@" ++ aKey[ii] );
+									//content 字幕，from 开始秒，to 结束秒，sid 字幕序号。
+									if tSta {
+										var tTime = sCCSub[i].from
+										sRes += string.format( '%02d:%02d:%02.3f', tTime > 3600 ? tTime / 3600 : 0, tTime > 3600 ? tTime % 3600 / 60 : tTime / 60, tTime % 60 ) ++ '\t' ++ sCCSub[i].content ++ '\r\n';
+									}
+								}
+							}
+							file.close();
+							file, err = io.open( "~/照明结果.txt", "w+" );
+							if file {
+								file.write( sRes );
+								file.close();
+								console.log( '路灯创建完成，请查看"照明结果.txt"' )
+							} else {
+								console.log( "创建照明结果失败，错误：" ++ err )
+							}
+						} else {
+							console.log( '无法读入"关键词.txt"，程序结束。' );
+						}
+					}
+				}
+			}
+		}
+	}
+}
+/*}}*/
 
+/*命令行流控{{*/
 //载入指定文件（调试用）
-//_ARGV.in := "C:\GSoft\aardio\project\B站昵称获取\dist\ID列表.txt"
-
-//载入命令行："/in xxx.txt" "-in xxx.txt" "--in xxx.txt" 或 "/in=xxx.txt"
-if( _ARGV.in ){
-	//console.dump( _ARGV.in, _ARGV[#_ARGV] ) //_ARGV 既包含命名参数组成的键值对，也包含按参数顺序组成的数组
-	UpdName( _ARGV.in )
-	/*
-	生成 EXE 以后，按 Ctrl + L 切换到地址栏，输入 cmd 回车 —— 在发布目录打开 cmd.exe，
-	然后输入 exe 文件名（按 tab 键可自动完成文件名）+ 参数后回车执行，例如 "?.exe /opt test c:\xxx.text"。
-	
-	除了传参数，也可以用 string.getenv() 获取父进程设置的环境变量，
-	或者在父进程创建管道(参考标准库 process.popen )读写标准输入输出，子进程用 io.stdin.read() 读标准输入, io.stdout.write() 写标准输出。
-	如果父进程、子进程都是 aardio 编写的，也可以用 process.command 交互更方便。
-	*/
-	
+if( _ARGV.u ){
+	UpdName( _ARGV.u )
+} elseif ( _ARGV.l ){
+	SLight ( _ARGV[2], tonumber(_ARGV[3]) )
+} elseif ( _ARGV.h ) {
+	console.log( '\r\nBilibBox v0.1 Alpha 2022 © Cnxysoft, Inc.\r\n\r\n'
+		++ '  -u  [UID List.txt]\r\n'
+		++ '      更新B站昵称列表(.txt)，每行一个UID，查询后会生成“查询结果.txt”\r\n'
+		++ '      由于频繁调用API有可能导致BLOCKED，故默认延迟为1s，暂不可修改。\r\n\r\n'
+		++ '  -l  [BVID] [PART]\r\n'
+		++ '      视频路灯功能，本程序会采集指定BV号下某P的CC字幕和弹幕数据进行\r\n'
+		++ '      融合整理并排序，输出“照明结果.txt”供剪辑人员作为路灯参考，触发\r\n'
+		++ '      判定的关键字可定义，使用“关键词.txt”进行定义，每行1个，自动调用。\r\n\r\n'
+		++ '  -h  输出使用帮助。'
+	)
 } else {
-	var sPath = console.getText( "请拖入UID列表文件(*.txt)：" );
-	UpdName( sPath )
+	var sFunc = console.getText( "请输入功能ID(1昵称|2路灯)：" )
+	select( sFunc ) {
+		case "1" {
+			var sPath = console.getText( "请拖入UID列表文件(*.txt)：" );
+			UpdName( sPath )
+		}
+		case "2" {
+			var tText = string.split( console.getText( "请输入BV号和P编号(例BV,1):" ), '<,>' );
+			SLight( tText[1], tonumber(tText[2]) )
+		}
+	}
+	console.pause()
 }
+/*}}*/
