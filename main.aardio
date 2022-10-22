@@ -1,5 +1,7 @@
 import console;
 import inet.http;
+import zlib;
+import string.xml;
 
 /*基础设定{{*/
 console.setTitle( "B站工具集" );
@@ -71,12 +73,12 @@ UpdName = function( path ){
     			file.close();
     			console.log( '数据已处理完成，请查看"查询结果.txt"' )
 			} else {
-				console.log( '无法创建查询结果，错误：' ++ err )
+				console.log( "无法创建查询结果，错误：" ++ err )
 			}
 
 
 		} else {
-			console.log( "无法打开指定的TXT文件，错误：", err )
+			console.log( "无法打开指定的TXT文件，错误：" ++ err )
 		}
 	} else {
 		console.log( "请拖入或使用命令行载入ID列表文件，每行一个UID(*.txt)。" )
@@ -84,11 +86,25 @@ UpdName = function( path ){
 }
 /*}}*/
 
+/*写出照明结果{{*/
+WriteResult = function( text ){
+	file, err = io.open( "~/照明结果.txt", "w+" );
+	if file {
+		file.write( text );
+		file.close();
+		console.log( '路灯创建完成，请查看"照明结果.txt"' )
+	} else {
+		console.log( "创建照明结果失败，错误：" ++ err )
+	}
+}
+/*}}*/
+
 /*路灯FUNC定义{{*/
 SLight = function( bvid, part ){
 	part = tonumber( part );
-	console.showLoading("处理中……");
-	var cid, cc_url, dm_url, sCCUrl, sCCSub;
+	console.showLoading("字幕处理中……");
+	var sRes = 'CC字幕结果：\r\n';
+	var cid, sDMUrl, sCCUrl, sCCSub, aKey;
 	var html = GetData( _PLAPI + bvid );
 	if ! html {
 		console.log( "服务器未返回播放列表，程序结束。" );
@@ -99,13 +115,22 @@ SLight = function( bvid, part ){
 		cid = aText.data[part].cid;
 		sCCUrl = string.replace( _CCAPI, '@[cid]', cid, 1 );
 		sCCUrl = string.replace( sCCUrl, '@[bvid]', bvid, 1 );
+		sDMUrl = string.replace( _DMAPI, '@[cid]', cid, 1 );
 		html = GetData( sCCUrl );
+		var file, err = io.open( "~/关键词.txt", "r+" );
+		if ! file {
+			console.log( '无法读入"关键词.txt"，程序结束。' );
+			return -1
+		}
 		if ! html {
 			console.log( "服务器未返回字幕列表，程序结束。" );
 			return -1
 		}
+		aKey = string.split( file.read(-1), '\r\n' );
+		file.close();
+		table.removeByValue( aKey, "", true );
 		aText = web.json.parse( html );
-		if aText.message == 0 {
+		if #aText.data.subtitle.subtitles > 0 {
 			sCCUrl = "https:" ++ aText.data.subtitle.subtitles[1].subtitle_url;
 			html = GetData( sCCUrl );
 			if ! html {
@@ -114,14 +139,6 @@ SLight = function( bvid, part ){
 			}
 			aText = web.json.parse( html );
 			sCCSub = aText.body;
-			var file, err = io.open( "~/关键词.txt", "r+" );
-			if ! file {
-				console.log( '无法读入"关键词.txt"，程序结束。' );
-				return -1
-			}
-			var sRes = "";
-			var aKey = string.split( file.read(-1), '\r\n' );
-			table.removeByValue( aKey, "", true );
 			for( i=1; #sCCSub; 1 ){
 				for( ii=1; #aKey; 1 ){
 					var tSta = string.find( sCCSub[i].content, "@" ++ aKey[ii] );
@@ -132,16 +149,47 @@ SLight = function( bvid, part ){
 					}
 				}
 			}
-			file.close();
-			file, err = io.open( "~/照明结果.txt", "w+" );
-			if file {
-				file.write( sRes );
-				file.close();
-				console.log( '路灯创建完成，请查看"照明结果.txt"' )
-			} else {
-				console.log( "创建照明结果失败，错误：" ++ err )
+			console.log( "CC字幕数据处理完成，过程结束。" );
+		} else {
+			console.log( "本视频无CC字幕数据，过程跳过。" );
+		}
+		console.showLoading( "弹幕处理中……" );
+		html = GetData( sDMUrl );
+		html = zlib.gzUncompress( html, "raw" );
+		if ! html {
+			console.log( "服务器未返回弹幕，程序结束。" );
+			return -1
+		}
+		var xmlDM = string.xml( html );
+		if ! xmlDM[2].source {
+			console.log( "本视频无弹幕数据，过程跳过。" );
+			WriteResult( sRes );
+			return -1
+		}
+		sRes = ( #sRes > 19 ? sRes ++ '\r\n\r\n' : '' ) ++ '弹幕结果：\r\n';
+		var aData = {};
+		for( i=1; #xmlDM[2].d; 1 ){
+			var mark = false;
+			for( ii=1; #aKey; 1 ){
+				var tSta = string.find( xmlDM[2].d[i][1].text, "@" ++ aKey[ii] );
+				//text 弹幕，p[1] 发送时间。
+				if tSta && ! mark {
+					var tTime = tonumber( string.split( xmlDM[2].d[i].p, '<,>' )[1] );
+					table.push( aData, { string.format( '%02d:%02d:%06.3f', tTime > 3600 ? tTime / 3600 : 0, tTime > 3600 ? tTime % 3600 / 60 : tTime / 60, tTime % 60 ), xmlDM[2].d[i][1].text } );
+					mark = true;
+				}
 			}
 		}
+		table.sort( aData, function( v ) {
+			for( i=1; #owner ) if( owner[i] != v[i] ) return owner[i] < v[i];
+		})
+		var aNewText = {};
+		for( i=1; #aData; 1 ){
+			table.push( aNewText, aData[i][1] ++ '\t' ++ aData [i][2] ++ '\r\n' );
+		}
+		sRes += string.join( aNewText );
+		console.log( "弹幕数据处理完成，过程结束。" );
+		WriteResult( sRes )
 	}
 }
 /*}}*/
@@ -158,9 +206,10 @@ if( _ARGV.u ){
 		++ '      更新B站昵称列表(.txt)，每行一个UID，查询后会生成“查询结果.txt”\r\n'
 		++ '      由于频繁调用API有可能导致BLOCKED，故默认延迟为1s，暂不可修改。\r\n\r\n'
 		++ '  -l  [BVID],[PART]\r\n'
-		++ '      视频路灯功能，本程序会采集指定BV号下某P的CC字幕和弹幕数据进行\r\n'
-		++ '      融合整理并排序，输出“照明结果.txt”供剪辑人员作为路灯参考，触发\r\n'
-		++ '      判定的关键字可定义，使用“关键词.txt”进行定义，每行1个，自动调用。\r\n\r\n'
+		++ '      视频路灯功能，本程序会采集指定BV号下某P的CC字幕和弹幕数据分别\r\n'
+		++ '      进行整理并排序，输出“照明结果.txt”供剪辑人员作为路灯参考，触发\r\n'
+		++ '      判定的关键字可于“关键词.txt”中进行定义，每行1个，程序自动调用。\r\n'
+		++ '      注：本程序会自动判断该视频是否存在CC字幕或弹幕并根据视情况输出。\r\n\r\n'
 		++ '  -h  输出使用帮助。'
 	)
 } else {
@@ -171,7 +220,7 @@ if( _ARGV.u ){
 			UpdName( sPath )
 		}
 		case "2" {
-			SLight( table.unpack( string.split( console.getText( "请输入BV号和P编号(例BV,1):" ), '<,>' ) ) )
+			SLight( table.unpack( string.split( console.getText( "请输入BV号和P编号(例BV,1)：" ), '<,>' ) ) )
 		}
 	}
 	console.pause()
