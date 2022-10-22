@@ -86,53 +86,60 @@ UpdName = function( path ){
 
 /*路灯FUNC定义{{*/
 SLight = function( bvid, part ){
+	part = tonumber( part );
 	console.showLoading("处理中……");
 	var cid, cc_url, dm_url, sCCUrl, sCCSub;
 	var html = GetData( _PLAPI + bvid );
-	if html {
-		var aText = web.json.parse( html );	
+	if ! html {
+		console.log( "服务器未返回播放列表，程序结束。" );
+		return -1
+	}
+	var aText = web.json.parse( html );	
+	if aText.message == 0 {
+		cid = aText.data[part].cid;
+		sCCUrl = string.replace( _CCAPI, '@[cid]', cid, 1 );
+		sCCUrl = string.replace( sCCUrl, '@[bvid]', bvid, 1 );
+		html = GetData( sCCUrl );
+		if ! html {
+			console.log( "服务器未返回字幕列表，程序结束。" );
+			return -1
+		}
+		aText = web.json.parse( html );
 		if aText.message == 0 {
-			cid = aText.data[part].cid;
-			sCCUrl = string.replace( _CCAPI, '@[cid]', cid, 1 );
-			sCCUrl = string.replace( sCCUrl, '@[bvid]', bvid, 1 );
+			sCCUrl = "https:" ++ aText.data.subtitle.subtitles[1].subtitle_url;
 			html = GetData( sCCUrl );
-			if html {
-				aText = web.json.parse( html );
-				if aText.message == 0 {
-					sCCUrl = "https:" ++ aText.data.subtitle.subtitles[1].subtitle_url;
-					html = GetData( sCCUrl );
-					if html {
-						aText = web.json.parse( html );
-						sCCSub = aText.body;
-						var file, err = io.open( "~/关键词.txt", "r+" );
-						if file {
-							var sRes = "";
-							var aKey = string.split( file.read(-1), '\r\n' );
-							table.removeByValue( aKey, "", true );
-							for( i=1; #sCCSub; 1 ){
-								for( ii=1; #aKey; 1 ){
-									var tSta = string.find( sCCSub[i].content, "@" ++ aKey[ii] );
-									//content 字幕，from 开始秒，to 结束秒，sid 字幕序号。
-									if tSta {
-										var tTime = sCCSub[i].from
-										sRes += string.format( '%02d:%02d:%02.3f', tTime > 3600 ? tTime / 3600 : 0, tTime > 3600 ? tTime % 3600 / 60 : tTime / 60, tTime % 60 ) ++ '\t' ++ sCCSub[i].content ++ '\r\n';
-									}
-								}
-							}
-							file.close();
-							file, err = io.open( "~/照明结果.txt", "w+" );
-							if file {
-								file.write( sRes );
-								file.close();
-								console.log( '路灯创建完成，请查看"照明结果.txt"' )
-							} else {
-								console.log( "创建照明结果失败，错误：" ++ err )
-							}
-						} else {
-							console.log( '无法读入"关键词.txt"，程序结束。' );
-						}
+			if ! html {
+				console.log( "服务器未返回CC字幕，程序结束。" );
+				return -1
+			}
+			aText = web.json.parse( html );
+			sCCSub = aText.body;
+			var file, err = io.open( "~/关键词.txt", "r+" );
+			if ! file {
+				console.log( '无法读入"关键词.txt"，程序结束。' );
+				return -1
+			}
+			var sRes = "";
+			var aKey = string.split( file.read(-1), '\r\n' );
+			table.removeByValue( aKey, "", true );
+			for( i=1; #sCCSub; 1 ){
+				for( ii=1; #aKey; 1 ){
+					var tSta = string.find( sCCSub[i].content, "@" ++ aKey[ii] );
+					//content 字幕，from 开始秒，to 结束秒，sid 字幕序号。
+					if tSta {
+						var tTime = sCCSub[i].from
+						sRes += string.format( '%02d:%02d:%06.3f', tTime > 3600 ? tTime / 3600 : 0, tTime > 3600 ? tTime % 3600 / 60 : tTime / 60, tTime % 60 ) ++ '\t' ++ sCCSub[i].content ++ '\r\n';
 					}
 				}
+			}
+			file.close();
+			file, err = io.open( "~/照明结果.txt", "w+" );
+			if file {
+				file.write( sRes );
+				file.close();
+				console.log( '路灯创建完成，请查看"照明结果.txt"' )
+			} else {
+				console.log( "创建照明结果失败，错误：" ++ err )
 			}
 		}
 	}
@@ -144,13 +151,13 @@ SLight = function( bvid, part ){
 if( _ARGV.u ){
 	UpdName( _ARGV.u )
 } elseif ( _ARGV.l ){
-	SLight ( _ARGV[2], tonumber(_ARGV[3]) )
+	SLight ( table.unpack( string.split( _ARGV[2], '<,>' ) ) )
 } elseif ( _ARGV.h ) {
 	console.log( '\r\nBilibBox v0.1 Alpha 2022 © Cnxysoft, Inc.\r\n\r\n'
 		++ '  -u  [UID List.txt]\r\n'
 		++ '      更新B站昵称列表(.txt)，每行一个UID，查询后会生成“查询结果.txt”\r\n'
 		++ '      由于频繁调用API有可能导致BLOCKED，故默认延迟为1s，暂不可修改。\r\n\r\n'
-		++ '  -l  [BVID] [PART]\r\n'
+		++ '  -l  [BVID],[PART]\r\n'
 		++ '      视频路灯功能，本程序会采集指定BV号下某P的CC字幕和弹幕数据进行\r\n'
 		++ '      融合整理并排序，输出“照明结果.txt”供剪辑人员作为路灯参考，触发\r\n'
 		++ '      判定的关键字可定义，使用“关键词.txt”进行定义，每行1个，自动调用。\r\n\r\n'
@@ -164,8 +171,7 @@ if( _ARGV.u ){
 			UpdName( sPath )
 		}
 		case "2" {
-			var tText = string.split( console.getText( "请输入BV号和P编号(例BV,1):" ), '<,>' );
-			SLight( tText[1], tonumber(tText[2]) )
+			SLight( table.unpack( string.split( console.getText( "请输入BV号和P编号(例BV,1):" ), '<,>' ) ) )
 		}
 	}
 	console.pause()
