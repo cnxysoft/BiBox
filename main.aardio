@@ -111,7 +111,6 @@ WriteResult = function( text ){
 SLight = function( bvid, part, analyze ){
 	part = tonumber( part );
 	//console.log( bvid, part, analyze )
-	console.showLoading( "字幕处理中……" );
 	var cid, sDMUrl, sCCUrl, sCCSub, aKey, sRes, iDuration;
 	var html = GetData( _PLAPI + bvid );
 	if ! html {
@@ -140,7 +139,8 @@ SLight = function( bvid, part, analyze ){
 		table.removeByValue( aKey, "", true );
 		aText = web.json.parse( html );
 		// CC字幕关键字查找
-		if #aText.data.subtitle.subtitles > 0 {
+		if #aText.data.subtitle.subtitles > 0 && ! analyze {
+			console.showLoading( "字幕处理中……" );
 			sCCUrl = "https:" ++ aText.data.subtitle.subtitles[1].subtitle_url;
 			html = GetData( sCCUrl );
 			if ! html {
@@ -162,7 +162,7 @@ SLight = function( bvid, part, analyze ){
 			}
 			console.log( "CC字幕数据处理完成，过程结束。" );
 		} else {
-			console.log( "本视频无CC字幕数据，过程跳过。" );
+			console.log( "无CC字幕或功能关闭，过程跳过。" );
 		}
 		// 弹幕关键字查找
 		console.showLoading( "弹幕处理中……" );
@@ -183,7 +183,7 @@ SLight = function( bvid, part, analyze ){
 			WriteResult( sRes );
 			return -1
 		}
-		sRes = ( !! sRes ? sRes ++ '\r\n\r\n' : "" ) ++ '弹幕总量：' ++ #xmlDM[2].d ++ '条\r\n弹幕结果：\r\n';
+		sRes = ( !! sRes ? sRes ++ '\r\n\r\n' : "" ) ++ ( ! analyze ? '弹幕总量：' ++ #xmlDM[2].d ++ '条\r\n弹幕结果：\r\n' : "" );
 		var aData, eTime = {}, tonumber( string.split( xmlDM[2].d[#xmlDM[2].d].p, '<,>' )[1] );
 		for( i=1; #xmlDM[2].d; 1 ){
 			var mark = false;
@@ -201,12 +201,14 @@ SLight = function( bvid, part, analyze ){
 			for( i=1; #owner ) if( owner[i] != v[i] ) return owner[i] < v[i];
 		})
 		//console.dump(aData);
-		var aNewText = {};
-		for( i=1; #aData; 1 ){
-			table.push( aNewText, aData[i][1] ++ '\t' ++ aData[i][2] ++ '\r\n' );
+		if ! analyze {
+			var aNewText = {};
+			for( i=1; #aData; 1 ){
+				table.push( aNewText, aData[i][1] ++ '\t' ++ aData[i][2] ++ '\r\n' );
+			}
+			sRes += string.join( aNewText );
+			console.log( "弹幕数据处理完成，过程结束。" );
 		}
-		sRes += string.join( aNewText );
-		console.log( "弹幕数据处理完成，过程结束。" );
 		// 区间弹量分析
 		if analyze {
 			console.showLoading( "弹量分析中……" );
@@ -227,7 +229,7 @@ SLight = function( bvid, part, analyze ){
 				var iTotal = eval( sDMFormula ++ ")/" ++ cycles );
 				//console.log( iTotal, '\t', sDMFormula ++ ")/" ++ cycles )
 				//console.dumpTable(aDMAvg)
-				sRes += '\r\n\r\n弹量分析：\r\n';
+				sRes += analyze ? '弹量分析：\r\n' : '\r\n\r\n弹量分析：\r\n';
 				for( i=1; cycles; 1 ) {
 					var ratio = aDMAvg[i] / iTotal;
 					//console.log( ratio )
@@ -250,7 +252,7 @@ if( _ARGV.u ){
 } elseif ( _ARGV.l ){
 	SLight ( table.unpack( string.split( _ARGV[2], '<,>' ) ) )
 } elseif ( _ARGV.h ) {
-	console.log( '\r\nBilibBox v0.2 Alpha 2022 © Cnxysoft, Inc.\r\n\r\n'
+	console.log( '\r\nBiBox v0.2 Alpha 2022 © Cnxysoft, Inc.\r\n\r\n'
 		++ '  -u  [UID List.txt]\r\n'
 		++ '      更新B站昵称列表(.txt)，每行一个UID，查询后会生成“查询结果.txt”\r\n'
 		++ '      由于频繁调用API有可能导致BLOCKED，故默认延迟为1s，暂不可修改。\r\n\r\n'
@@ -259,12 +261,12 @@ if( _ARGV.u ){
 		++ '      进行整理并排序，输出“照明结果.txt”供剪辑人员作为路灯参考，触发\r\n'
 		++ '      判定的关键字可于“关键词.txt”中进行定义，每行1个，程序自动调用。\r\n'
 		++ '      注：本程序会自动判断该视频是否存在CC字幕或弹幕并视具体情况输出。\r\n\r\n'
-		++ '  -la [BVID],[PART]\r\n'
+		++ '  -a  [BVID],[PART]\r\n'
 		++ '      自动采集并分析目标视频的弹幕并尝试帮助发现该视频的高能时刻。\r\n'
-		++ '      注：本程序目前采用的是区间弹量作为高能时刻的基础判断方式。\r\n'
+		++ '      注：本程序目前采用的是区间弹量作为高能时刻的基础判断方式。\r\n\r\n'
 		++ '  -h  输出使用帮助。\r\n'
 	)
-} elseif ( _ARGV.la ) {
+} elseif ( _ARGV.a ) {
 	var bvid, part = table.unpack( string.split( _ARGV[2], '<,>' ) );
 	SLight ( bvid, part, true )
 } else {
