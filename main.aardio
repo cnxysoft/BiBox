@@ -2,10 +2,9 @@ import console;
 import inet.http;
 import zlib;
 import string.xml;
-import jieba;
 
 /*基础设定{{*/
-console.setTitle( "BiBox" );
+console.setTitle( "B站工具集" );
 _APIURL := "https://api.bilibili.com/x/space/acc/info?mid=";
 _PLAPI := "https://api.bilibili.com/x/player/pagelist?bvid=";
 _CCAPI := "https://api.bilibili.com/x/player/v2?cid=[cid]&bvid=[bvid]";
@@ -13,7 +12,6 @@ _DMAPI := "https://comment.bilibili.com/[cid].xml";
 _TRYINTERVAL := 1000; // 昵称获取频率（单位：ms）。
 _SPLITLEN := 300; // 弹量取值区间长度（单位：s）。
 _DMRatio := 1.5; // 区间弹量触发倍率。
-_DMQty := 5; // 设定分析结果显示的高能弹幕数量（单位：条）。
 /*}}*/
 
 /*拉取数据{{*/
@@ -27,9 +25,9 @@ GetData = function( url ){
 		http.close();
 		return html
 	} else {
-		if( http.statusCode ){
+		if( example.statusCode ){
 			//服务端返回错误信息
-			console.log( http.lastResponse(), "HTTP错误代码:" ++ http.statusCode )
+			console.log( example.lastResponse(), "HTTP错误代码:" ++ example.statusCode )
 		} else {
 			//本地内部错误
 			console.log( err, errCode )
@@ -43,20 +41,6 @@ GetData = function( url ){
 /*格式化时间{{*/
 formatTime = function( iTime ){
 	return string.format( '%02d:%02d:%06.3f', iTime > 3600 ? iTime / 3600 : 0, iTime > 3600 ? iTime % 3600 / 60 : iTime / 60, iTime % 60 );
-}
-/*}}*/
-
-/*数组排序{{*/
-ArraySortASC = function( tab ){
-	table.sort( tab, function( v ) {
-		for( i=1; #owner ) if( owner[i] != v[i] ) return owner[i] < v[i]
-	})
-}
-
-ArraySortDESC = function( tab ){
-	table.sort( tab, function( v ) {
-		for( i=1; #owner ) if( owner[i] != v[i] ) return owner[i] > v[i]
-	})
 }
 /*}}*/
 
@@ -87,11 +71,20 @@ UpdName = function( path ){
 					} else {
 						sName = aText.message
 					}
-					Res ++= aUID[i] + '\t' + sName + '\r\n'
+					Res += aUID[i] + '\t' + sName + '\r\n'
 				}
 			}
 			file.close();
-			WriteResult( 1, Res )
+			file, err = io.open( "~/查询结果.txt", "w+" );
+			if file {
+    			file.write( Res );
+    			file.close();
+    			console.log( '数据已处理完成，请查看"查询结果.txt"\r\n' )
+			} else {
+				console.log( "无法创建查询结果，错误：" ++ err )
+			}
+
+
 		} else {
 			console.log( "无法打开指定的TXT文件，错误：" ++ err )
 		}
@@ -102,14 +95,14 @@ UpdName = function( path ){
 /*}}*/
 
 /*写出照明结果{{*/
-WriteResult = function( mode, text ){
-	file, err = io.open( "~/" ++ ( mode == 1 ? "查询" : "照明" ) ++ "结果.txt", "w+" );
+WriteResult = function( text ){
+	file, err = io.open( "~/照明结果.txt", "w+" );
 	if file {
 		file.write( text );
 		file.close();
-		console.log( mode == 1 ? '数据已处理完成，请查看"查询结果.txt"\r\n' : '路灯创建完成，请查看"照明结果.txt"' )
+		console.log( '路灯创建完成，请查看"照明结果.txt"' )
 	} else {
-		console.log( ( mode == 1 ? "无法创建查询结果，错误：" : "创建照明结果失败，错误：" ) ++ err )
+		console.log( "创建照明结果失败，错误：" ++ err )
 	}
 }
 /*}}*/
@@ -117,6 +110,7 @@ WriteResult = function( mode, text ){
 /*路灯FUNC定义{{*/
 SLight = function( bvid, part, analyze ){
 	part = tonumber( part );
+	//console.log( bvid, part, analyze )
 	var cid, sDMUrl, sCCUrl, sCCSub, aKey, sRes, iDuration;
 	var html = GetData( _PLAPI + bvid );
 	if ! html {
@@ -161,16 +155,16 @@ SLight = function( bvid, part, analyze ){
 					var tSta = string.find( sCCSub[i].content, "@@" ++ aKey[ii] );
 					//content 字幕，from 开始秒，to 结束秒，sid 字幕序号。
 					if tSta {
-						var tTime = sCCSub[i].from;
-						sRes ++= formatTime( tTime ) ++ '\t' ++ sCCSub[i].content ++ '\r\n'
+						var tTime = sCCSub[i].from
+						sRes += formatTime( tTime ) ++ '\t' ++ sCCSub[i].content ++ '\r\n';
 					}
 				}
 			}
-			console.log( "CC字幕数据处理完成，过程结束。" )
+			console.log( "CC字幕数据处理完成，过程结束。" );
 		} else {
-			console.log( "无CC字幕或功能关闭，过程跳过。" )
+			console.log( "无CC字幕或功能关闭，过程跳过。" );
 		}
-		// 弹幕数据处理
+		// 弹幕关键字查找
 		console.showLoading( "弹幕处理中……" );
 		html = GetData( sDMUrl );
 		html = zlib.gzUncompress( html, "raw" );
@@ -178,110 +172,75 @@ SLight = function( bvid, part, analyze ){
 			console.log( "服务器未返回弹幕，程序结束。" );
 			return -1
 		}
+		/*
+		file = io.open("~/测试.xml", "w+") // 调试用：输出xml
+		file.write(html);
+		file.close()
+		*/
 		var xmlDM = string.xml( html );
 		if ! xmlDM[2].source {
 			console.log( "本视频无弹幕数据，过程跳过。" );
-			WriteResult( 2, sRes );
+			WriteResult( sRes );
 			return -1
 		}
-		sRes = ( !! sRes ? sRes ++ '\r\n\r\n' : "" ) ++ ( ! analyze ? '弹幕总量：' ++ #xmlDM[2].d ++ '条\r\n弹幕结果：\r\n\r\n' : "" );
-		// 弹幕关键字匹配
-		if ! analyze {
-			var aData, eTime = {}, tonumber( string.split( xmlDM[2].d[#xmlDM[2].d].p, '<,>' )[1] );
-			for( i=1; #xmlDM[2].d; 1 ){
-				var mark = false;
-				for( ii=1; #aKey; 1 ){
-					var tSta = string.find( xmlDM[2].d[i][1].text, "@@" ++ aKey[ii] );
-					//text 弹幕，p[1] 发送时间。
-					if tSta && ! mark {
-						var tTime = tonumber( string.split( xmlDM[2].d[i].p, '<,>' )[1] );
-						table.push( aData, { formatTime( tTime ), xmlDM[2].d[i][1].text } );
-						mark = true;
-					}
+		sRes = ( !! sRes ? sRes ++ '\r\n\r\n' : "" ) ++ ( ! analyze ? '弹幕总量：' ++ #xmlDM[2].d ++ '条\r\n弹幕结果：\r\n' : "" );
+		var aData, eTime = {}, tonumber( string.split( xmlDM[2].d[#xmlDM[2].d].p, '<,>' )[1] );
+		for( i=1; #xmlDM[2].d; 1 ){
+			var mark = false;
+			for( ii=1; #aKey; 1 ){
+				var tSta = string.find( xmlDM[2].d[i][1].text, "@@" ++ aKey[ii] );
+				//text 弹幕，p[1] 发送时间。
+				if tSta && ! mark {
+					var tTime = tonumber( string.split( xmlDM[2].d[i].p, '<,>' )[1] );
+					table.push( aData, { formatTime( tTime ), xmlDM[2].d[i][1].text } );
+					mark = true;
 				}
 			}
+		}
+		table.sort( aData, function( v ) {
+			for( i=1; #owner ) if( owner[i] != v[i] ) return owner[i] < v[i];
+		})
+		//console.dump(aData);
+		if ! analyze {
 			var aNewText = {};
-			ArraySortASC( aData );
 			for( i=1; #aData; 1 ){
-				table.push( aNewText, aData[i][1] ++ '\t' ++ aData[i][2] ++ '\r\n' )
+				table.push( aNewText, aData[i][1] ++ '\t' ++ aData[i][2] ++ '\r\n' );
 			}
-			sRes ++= string.join( aNewText );
-			console.log( "弹幕数据处理完成，过程结束。" )
+			sRes += string.join( aNewText );
+			console.log( "弹幕数据处理完成，过程结束。" );
 		}
 		// 区间弹量分析
 		if analyze {
 			console.showLoading( "弹量分析中……" );
-			var jbobj = jieba();
-			var sWordGourp = "";
-			var sDMFormula, iNTime, cycles, aDMAvg, subTime, aDMText = "(", 300, math.round( iDuration / _SPLITLEN ), {}, 1, {};
+			var sDMFormula, iNTime, cycles, aDMAvg = "(", 300, math.round( iDuration / _SPLITLEN ), {};
+			var subTime = 0;
 			for( i=1; cycles; 1 ){
-				var sTotal, sDMText, sResult, sResultGroup, aWordGroup, target, bWordFlag = 0, "", "", {}, {}, 0, false;
+				var sTotal = 0;
 				for( ii=1; #xmlDM[2].d; 1 ){
 					subTime = tonumber(string.split( xmlDM[2].d[ii].p, '<,>' )[1]);
-					if subTime >= iNTime - _SPLITLEN && subTime <= iNTime {
-						sDMText ++= xmlDM[2].d[ii][1].text;
-						sTotal ++
-						//console.dump(xmlDM[2].d[ii][1].text) // 输出弹幕文本
-					}
+					if subTime >= iNTime - _SPLITLEN && subTime <= iNTime sTotal ++;
 				}
-				// 排除部分词性
-				for word in jbobj.eachWithOutTagName( sDMText, "x" ){
-					sResult ++= word
-				}
-				sDMText = sResult;
-				sResult = "";
-				for word,tag in jbobj.eachWithTag( sDMText ){
-					if tag == "eng" || #word > 3 {
-						sResult ++= word ++ "|"
-						sWordGourp ++= word ++ ":" ++ tag ++ "|"
-					}
-				}
-				//console.log('\n');
-				//console.dump(sWordGourp); // 输出分词、词性
-				//console.log('\n');
-				sResultGroup = string.split( sResult, '<|>' );
-				ArraySortDESC( sResultGroup );
-				//console.dump(sResult) // 输出完整分词结果
-				for( i=1; #sResultGroup; 1 ){
-					if i > 1 {
-						if sResultGroup[i - 1] == sResultGroup[i] {
-							aWordGroup[target][1]++;
-							bWordFlag = true
-						} else {
-							bWordFlag = false
-						}
-					}
-					if ! bWordFlag {
-						table.push( aWordGroup, { 1 , sResultGroup[i] } );
-						target = #aWordGroup
-					}
-				}
-				ArraySortDESC( aWordGroup );
-				//console.dump(aWordGroup) // 输出高能弹幕
-				//console.pause(); // 暂停一轮
-				var tDMText, DMcycle = {}, #aWordGroup > _DMQty ? _DMQty : #aWordGroup;
-				for( i=1; DMcycle; 1 ){
-					table.push( tDMText, aWordGroup[i][2] ++ "：" ++ aWordGroup[i][1] ++ "次" ++ ( i < DMcycle ? "；" : "" ) )
-				}
-				table.push( aDMText, string.join( tDMText ) );
+				//console.log(sTotal)
 				table.push( aDMAvg, sTotal / _SPLITLEN );
-				sDMFormula ++= aDMAvg[i] ++ ( i < cycles ? "+" : "" );
+				sDMFormula += aDMAvg[i] ++ ( i < cycles ? "+" : "" );
 				iNTime += _SPLITLEN
 			}
 			if #sDMFormula > 1 {
 				var iTotal = eval( sDMFormula ++ ")/" ++ cycles );
-				sRes ++= analyze ? '弹量分析：\r\n\r\n' : '\r\n\r\n弹量分析：\r\n\r\n';
+				//console.log( iTotal, '\t', sDMFormula ++ ")/" ++ cycles )
+				//console.dumpTable(aDMAvg)
+				sRes += analyze ? '弹量分析：\r\n' : '\r\n\r\n弹量分析：\r\n';
 				for( i=1; cycles; 1 ) {
 					var ratio = aDMAvg[i] / iTotal;
+					//console.log( ratio )
 					if ratio > _DMRatio {
-						sRes ++= formatTime( ( i - 1 ) * _SPLITLEN ) ++ " ~ " ++ formatTime( ( i * _SPLITLEN ) )  ++ '\t' ++ ratio ++ '\r\n'
-							++ aDMText[i] ++ '\r\n\r\n'
+						sRes += formatTime( ( i - 1 ) * _SPLITLEN ) ++ " ~ " ++ formatTime( ( i * _SPLITLEN ) )  ++ '\t' ++ ratio ++ '\r\n'
 					}
 				}
 			}
 			console.log( "区间弹量分析完成，过程结束。" )
 		}
-		WriteResult( 2, sRes )
+		WriteResult( sRes )
 	}
 }
 /*}}*/
@@ -299,13 +258,12 @@ if( _ARGV.u ){
 		++ '      由于频繁调用API有可能导致BLOCKED，故默认延迟为1s，暂不可修改。\r\n\r\n'
 		++ '  -l  [BVID],[PART]\r\n'
 		++ '      视频路灯功能，本程序会采集指定BV号下某P的CC字幕和弹幕数据分别\r\n'
-		++ '      进行整理并排序，输出“照明结果.txt”包含发送时间、弹幕内容。触发\r\n'
+		++ '      进行整理并排序，输出“照明结果.txt”供剪辑人员作为路灯参考，触发\r\n'
 		++ '      判定的关键字可于“关键词.txt”中进行定义，每行1个，程序自动调用。\r\n'
 		++ '      注：本程序会自动判断该视频是否存在CC字幕或弹幕并视具体情况输出。\r\n\r\n'
 		++ '  -a  [BVID],[PART]\r\n'
-		++ '      自动采集并分析目标视频的弹幕并尝试帮助发现该视频的高能时刻，\r\n'
-		++ '      输出“照明结果.txt”作为路灯参考，包含时间、分片弹量倍率、高频词。'
-		++ '      注：本程序目前采用的是该视频的区间弹量倍率作为高能时刻的参考。\r\n\r\n'
+		++ '      自动采集并分析目标视频的弹幕并尝试帮助发现该视频的高能时刻。\r\n'
+		++ '      注：本程序目前采用的是区间弹量作为高能时刻的基础判断方式。\r\n\r\n'
 		++ '  -h  输出使用帮助。\r\n'
 	)
 } elseif ( _ARGV.a ) {
